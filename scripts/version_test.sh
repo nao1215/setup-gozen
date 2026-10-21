@@ -89,9 +89,10 @@ cp "${here}/../test/fixtures/game/go.mod" "$ws/go.mod"
 for v in "" "go.mod"; do
   GITHUB_WORKSPACE="$ws" INPUT_GO_MOD_PATH="." check "$v" "v0.2.0" "0.2.0" || true
 done
-GITHUB_WORKSPACE="$ws" INPUT_VERSION="go.mod" INPUT_GO_MOD_PATH="../x" \
-  bash -c 'source "$1"; resolve_version' _ "${here}/install.sh" >/dev/null 2>"$errfile" \
-  && fail "go.mod mode accepted ../x" || true
+if GITHUB_WORKSPACE="$ws" INPUT_VERSION="go.mod" INPUT_GO_MOD_PATH="../x" \
+  bash -c 'source "$1"; resolve_version' _ "${here}/install.sh" >/dev/null 2>"$errfile"; then
+  fail "go.mod mode accepted ../x"
+fi
 if grep -q "'..'" "$errfile"; then pass "go.mod mode rejects ../x"; else fail "go.mod mode did not reject ../x"; fi
 rm -rf "$ws"
 
