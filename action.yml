@@ -1,5 +1,5 @@
 name: "Setup gozen"
-description: "Install the gozen CLI by downloading a prebuilt release binary, at the version your game's go.mod pins (Linux, macOS, Windows / amd64, arm64)."
+description: "Install the gozen CLI release binary at the version in your go.mod, verified by checksum."
 author: "CHIKAMATSU Naohiro"
 
 branding:
