@@ -1,0 +1,195 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Static checks - these always run.
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run ShellCheck
+        # -x lets ShellCheck follow the sourced scripts from the tests.
+        run: shellcheck -x scripts/*.sh
+
+      - name: Run actionlint
+        uses: raven-actions/actionlint@v2
+
+  # Unit tests of the scripts on every OS: macOS runs bash 3.2 and Windows runs
+  # Git Bash, so portability problems show up here without a download.
+  unit:
+    name: Unit (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Test version resolution
+        shell: bash
+        run: bash scripts/version_test.sh
+
+      - name: Test go.mod parsing
+        shell: bash
+        run: bash scripts/gomod_test.sh
+
+      - name: Test go-mod-path safety (directory traversal)
+        shell: bash
+        run: bash scripts/path_test.sh
+
+      - name: Test checksum verification
+        shell: bash
+        run: bash scripts/checksum_test.sh
+
+      - name: Test release tag normalization
+        shell: bash
+        run: bash scripts/release_meta_test.sh
+
+  # End-to-end: install the real v0.2.0 release on every supported platform
+  # and run it.
+  install:
+    name: Install (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup gozen (explicit version)
+        id: explicit
+        uses: ./
+        with:
+          version: v0.2.0
+
+      - name: Check the explicit install (bash)
+        shell: bash
+        env:
+          VERSION: ${{ steps.explicit.outputs.version }}
+          GOZEN_PATH: ${{ steps.explicit.outputs.gozen-path }}
+        run: |
+          set -euo pipefail
+          echo "version=${VERSION}"
+          echo "gozen-path=${GOZEN_PATH}"
+          [ "${VERSION}" = "v0.2.0" ]
+          command -v gozen
+          gozen --version | tee version.txt
+          grep -q "0.2.0" version.txt
+
+      - name: Check the explicit install (PowerShell)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-Command gozen
+          gozen --version
+
+      - name: Setup gozen (from go.mod at the workspace root of a fixture)
+        id: gomod
+        uses: ./
+        with:
+          go-mod-path: test/fixtures/game
+
+      - name: Check the go.mod install, served from the tool cache
+        shell: bash
+        env:
+          VERSION: ${{ steps.gomod.outputs.version }}
+          CACHE_HIT: ${{ steps.gomod.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          [ "${VERSION}" = "v0.2.0" ]
+          [ "${CACHE_HIT}" = "true" ]
+          gozen --version | grep -q "0.2.0"
+
+      - name: Setup gozen (go.mod in a monorepo subdirectory, by file path)
+        id: monorepo
+        uses: ./
+        with:
+          go-mod-path: test/fixtures/monorepo/games/rpg/go.mod
+
+      - name: Check the monorepo install
+        shell: bash
+        env:
+          VERSION: ${{ steps.monorepo.outputs.version }}
+        run: |
+          set -euo pipefail
+          [ "${VERSION}" = "v0.2.0" ]
+          gozen --version | grep -q "0.2.0"
+
+      - name: Setup gozen (latest)
+        id: latest
+        uses: ./
+        with:
+          version: latest
+
+      - name: Check the latest install
+        shell: bash
+        env:
+          VERSION: ${{ steps.latest.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "latest resolved to ${VERSION}"
+          [[ "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]
+          gozen --version | grep -q "${VERSION#v}"
+
+  # Paths that leave the workspace, and go.mod files that name no release,
+  # must fail the step.
+  reject:
+    name: Reject (${{ matrix.case }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - case: parent-directory
+            path: ../../etc
+          - case: absolute-path
+            path: /etc
+          - case: windows-separators
+            path: '..\..\etc'
+          - case: windows-drive
+            path: 'C:\Windows'
+          - case: local-replace
+            path: test/fixtures/local-replace
+          - case: pseudo-version
+            path: test/fixtures/pseudo
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup gozen (expected to fail)
+        id: setup
+        continue-on-error: true
+        uses: ./
+        with:
+          go-mod-path: ${{ matrix.path }}
+
+      - name: The step must have failed
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.setup.outcome }}
+        run: |
+          [ "${OUTCOME}" = "failure" ]

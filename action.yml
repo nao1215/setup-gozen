@@ -1,0 +1,69 @@
+name: "Setup gozen"
+description: "Install the gozen CLI by downloading a prebuilt release binary, at the version your game's go.mod pins (Linux, macOS, Windows / amd64, arm64)."
+author: "CHIKAMATSU Naohiro"
+
+branding:
+  icon: "download"
+  color: "blue"
+
+inputs:
+  version:
+    description: 'Version of gozen to install: "go.mod" (the version required by your go.mod, default), "latest", or an explicit version such as "v0.2.0".'
+    required: false
+    default: "go.mod"
+  go-mod-path:
+    description: 'Used when version is "go.mod". A go.mod file or a directory containing one, relative to the workspace. Paths that leave the workspace are rejected.'
+    required: false
+    default: "."
+  github-token:
+    description: "GitHub token used for API requests (resolving latest) to avoid rate limiting."
+    required: false
+    default: ${{ github.token }}
+  install-dir:
+    description: "Copy the gozen binary into this directory instead of using the tool cache directly."
+    required: false
+    default: ""
+  verify-checksum:
+    description: 'Verify the downloaded archive against checksums.txt (SHA-256). Set to "false" to skip.'
+    required: false
+    default: "true"
+  verify-attestation:
+    description: 'Verify the archive build provenance with "gh attestation verify". Requires the gh CLI. Opt-in.'
+    required: false
+    default: "false"
+  add-to-path:
+    description: 'Add the install directory to PATH for subsequent steps. Set to "false" to only expose the outputs.'
+    required: false
+    default: "true"
+
+outputs:
+  version:
+    description: "The resolved version of gozen that was installed (e.g. v0.2.0)."
+    value: ${{ steps.install.outputs.version }}
+  gozen-path:
+    description: "Absolute path to the installed gozen binary."
+    value: ${{ steps.install.outputs.gozen-path }}
+  install-dir:
+    description: "Directory containing the gozen binary (added to PATH)."
+    value: ${{ steps.install.outputs.install-dir }}
+  cache-hit:
+    description: 'Whether the binary came from the tool cache ("true" or "false").'
+    value: ${{ steps.install.outputs.cache-hit }}
+
+runs:
+  using: "composite"
+  steps:
+    - id: install
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_GO_MOD_PATH: ${{ inputs.go-mod-path }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_INSTALL_DIR: ${{ inputs.install-dir }}
+        INPUT_VERIFY_CHECKSUM: ${{ inputs.verify-checksum }}
+        INPUT_VERIFY_ATTESTATION: ${{ inputs.verify-attestation }}
+        INPUT_ADD_TO_PATH: ${{ inputs.add-to-path }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        RUNNER_OS: ${{ runner.os }}
+        RUNNER_ARCH: ${{ runner.arch }}
+      run: bash "${GITHUB_ACTION_PATH}/scripts/install.sh"
