@@ -60,7 +60,7 @@ Tags can be moved. For a workflow that must not change underneath you, pin the
 action to a full commit SHA and keep the tag in a comment:
 
 ```yaml
-- uses: nao1215/setup-gozen@b8c63e495b0aa9013d2308664a904f03009785a9 # v0.1.0
+- uses: nao1215/setup-gozen@1c378fc446f62ecb29a7bcd40aea6dff8565d698 # v0.1.1
 ```
 
 Dependabot and Renovate can keep a SHA-pinned action up to date.
