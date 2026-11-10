@@ -1,6 +1,7 @@
 # setup-gozen
 
 [![Test](https://github.com/nao1215/setup-gozen/actions/workflows/test.yml/badge.svg)](https://github.com/nao1215/setup-gozen/actions/workflows/test.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/nao1215/setup-gozen/badge)](https://scorecard.dev/viewer/?uri=github.com/nao1215/setup-gozen)
 
 GitHub Action to install the [gozen](https://github.com/nao1215/gozen) CLI.
 
