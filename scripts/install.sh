@@ -53,20 +53,23 @@ to_native_path() {
 # without credentials. The token is passed as a header argument and is never
 # printed. Branching avoids expanding a possibly-empty array under `set -u` on
 # macOS bash 3.2.
+# Five retries without --retry-delay back off 1, 2, 4, 8 and 16 seconds: the
+# release asset host has returned 504 for longer than three tries two seconds
+# apart, failing a job on a download that worked a minute later.
 gh_curl() {
   if [ -n "${INPUT_GITHUB_TOKEN:-}" ]; then
-    curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+    curl --fail --silent --show-error --location --retry 5 \
       -H "X-GitHub-Api-Version: 2022-11-28" \
       -H "Authorization: Bearer ${INPUT_GITHUB_TOKEN}" "$@"
   else
-    curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+    curl --fail --silent --show-error --location --retry 5 \
       -H "X-GitHub-Api-Version: 2022-11-28" "$@"
   fi
 }
 
 # Plain download of a public release asset (no credentials).
 download() {
-  curl --fail --silent --show-error --location --retry 3 --retry-delay 2 "$@"
+  curl --fail --silent --show-error --location --retry 5 "$@"
 }
 
 extract_tag_name() {
