@@ -61,6 +61,39 @@ check_latest() {
   unset -f gh_curl
 }
 
+# check_latest_fallback NAME WANT LATEST_BODY LIST_BODY
+# releases/latest answers LATEST_BODY and GET /releases answers LIST_BODY; the
+# resolved tag must be WANT, or the step must fail when WANT is empty.
+check_latest_fallback() {
+  local name="$1" want="$2" latest_body="$3" list_body="$4"
+  INPUT_VERSION="latest"
+  TAG="" NUM_VERSION=""
+  LATEST_BODY="$latest_body" LIST_BODY="$list_body"
+  gh_curl() {
+    case "$*" in
+      */releases/latest*) printf '%s\n' "$LATEST_BODY" ;;
+      */releases\?per_page=*) printf '%s\n' "$LIST_BODY" ;;
+      *) printf 'unexpected request: %s\n' "$*" >&2; return 1 ;;
+    esac
+  }
+  if [ -z "$want" ]; then
+    if (resolve_version) >/dev/null 2>"$errfile"; then
+      fail "$name: resolved although no CLI release exists"
+    else
+      pass "$name: fails ($(tail -n1 "$errfile"))"
+    fi
+  else
+    local got
+    got="$( (resolve_version >/dev/null && printf '%s' "$TAG") 2>"$errfile")" || true
+    if [ "$got" != "$want" ]; then
+      fail "$name -> TAG=$got (want $want) $(tail -n1 "$errfile")"
+    else
+      pass "$name -> TAG=$got"
+    fi
+  fi
+  unset -f gh_curl
+}
+
 check_tag_name '{"tag_name":"v0.2.0"}' "v0.2.0"
 # A release lists every asset, so the API response outgrows a pipe buffer. The
 # tag must come out without a pipe whose reader can stop early.
@@ -73,8 +106,27 @@ check " v0.2.0 " "v0.2.0" "0.2.0"
 check "v0.3.0-rc.1" "v0.3.0-rc.1" "0.3.0-rc.1"
 check_latest
 
+# The gozen repository also publishes game packages and a catalog as
+# releases. When one of them is marked latest, `latest` must still resolve the
+# newest CLI release instead of a tag with no gozen binary.
+pkg_latest='{"tag_name":"phone-counter-v1.0.1","prerelease":false}'
+list_pretty="$(printf '[\n  {\n    "tag_name": "phone-counter-v1.0.1",\n    "name": "Counter 1.0.1",\n    "draft": false,\n    "prerelease": false\n  },\n  {\n    "tag_name": "v0.27.0-rc.1",\n    "draft": false,\n    "prerelease": true\n  },\n  {\n    "tag_name": "game-catalog",\n    "prerelease": false\n  },\n  {\n    "tag_name": "v0.26.0",\n    "assets": [{"name": "gozen_0.26.0_linux_amd64.tar.gz", "state": "uploaded"}],\n    "prerelease": false\n  },\n  {\n    "tag_name": "v0.25.0",\n    "prerelease": false\n  }\n]\n')"
+list_compact='[{"tag_name":"game-catalog","prerelease":false},{"tag_name":"v0.26.0","prerelease":false},{"tag_name":"v0.25.0","prerelease":false}]'
+check_latest_fallback "package release marked latest" v0.26.0 "$pkg_latest" "$list_pretty"
+check_latest_fallback "compact release list" v0.26.0 "$pkg_latest" "$list_compact"
+check_latest_fallback "latest without tag_name" v0.26.0 '{"message":"Not Found"}' "$list_compact"
+check_latest_fallback "CLI release marked latest needs no listing" v0.26.0 '{"tag_name":"v0.26.0"}' 'not json'
+check_latest_fallback "no CLI release at all" "" "$pkg_latest" '[{"tag_name":"game-catalog","prerelease":false}]'
+check_latest_fallback "only a pre-release CLI" "" "$pkg_latest" '[{"tag_name":"v0.27.0-rc.1","prerelease":true}]'
+
 # The version lands in a URL and a cache path: anything else must be refused.
 check_rejected "v0.2"
+check_rejected "V0.2.0"      # tags are lower-case v
+check_rejected "vv0.2.0"     # doubled prefix
+check_rejected "v"           # prefix without a version
+check_rejected "0.2.0.0"     # extra component
+check_rejected "Latest"      # only the exact word latest means the newest release
+check_rejected "GO.MOD"      # only the exact word go.mod reads go.mod
 check_rejected "main"
 check_rejected "v0.2.0/../../x"
 check_rejected 'v0.2.0;id'

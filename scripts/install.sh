@@ -87,6 +87,34 @@ extract_tag_name() {
   esac
 }
 
+# is_cli_release_tag TAG: true for a gozen CLI release tag (vX.Y.Z with an
+# optional pre-release suffix), false for package and catalog releases.
+is_cli_release_tag() {
+  [[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+}
+
+# pick_cli_release_tag BODY
+# Prints the first stable gozen CLI release (vX.Y.Z, not a pre-release) in a
+# GET /releases response, which lists the newest release first. Splitting on
+# commas first keeps one JSON field per line for compact and pretty-printed
+# bodies alike. awk reads its input to the end, so the writer never gets
+# SIGPIPE under pipefail.
+pick_cli_release_tag() {
+  printf '%s\n' "$1" | tr ',' '\n' | awk '
+    /"tag_name"[[:space:]]*:/ {
+      tag = $0
+      sub(/.*"tag_name"[[:space:]]*:[[:space:]]*"/, "", tag)
+      sub(/".*/, "", tag)
+      next
+    }
+    /"prerelease"[[:space:]]*:/ {
+      if (found == "" && tag ~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ && $0 ~ /false/) found = tag
+      tag = ""
+    }
+    END { if (found != "") print found }
+  '
+}
+
 # ---------------------------------------------------------------------------
 # Resolve OS / architecture into GoReleaser's naming.
 # ---------------------------------------------------------------------------
@@ -131,6 +159,16 @@ resolve_version() {
       || die "failed to query the latest release from the GitHub API"
     # Extract tag_name without depending on jq.
     tag="$(extract_tag_name "$body")"
+    # The gozen repository also publishes game packages and a game catalog as
+    # releases (phone-counter-v1.0.1, game-catalog). GitHub marks the newest
+    # one as latest unless it is published with --latest=false, and then
+    # releases/latest names a tag with no gozen CLI binary.
+    if ! is_cli_release_tag "$tag"; then
+      log "The latest release (${tag:-none}) is not a gozen CLI release; searching the release list..."
+      body="$(gh_curl "https://api.github.com/repos/${OWNER}/${REPO}/releases?per_page=100")" \
+        || die "failed to list releases from the GitHub API"
+      tag="$(pick_cli_release_tag "$body")"
+    fi
     [ -n "$tag" ] || die "could not determine the latest release tag"
     requested="$tag"
   fi
