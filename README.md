@@ -1,7 +1,9 @@
 # setup-gozen
 
 [![Test](https://github.com/nao1215/setup-gozen/actions/workflows/test.yml/badge.svg)](https://github.com/nao1215/setup-gozen/actions/workflows/test.yml)
+[![Gitleaks](https://github.com/nao1215/setup-gozen/actions/workflows/gitleaks.yml/badge.svg)](https://github.com/nao1215/setup-gozen/actions/workflows/gitleaks.yml)
 [![Trivy](https://github.com/nao1215/setup-gozen/actions/workflows/trivy.yml/badge.svg)](https://github.com/nao1215/setup-gozen/actions/workflows/trivy.yml)
+[![License](https://img.shields.io/github/license/nao1215/setup-gozen)](./LICENSE)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/nao1215/setup-gozen/badge)](https://scorecard.dev/viewer/?uri=github.com/nao1215/setup-gozen)
 
 GitHub Action to install the [gozen](https://github.com/nao1215/gozen) CLI.
