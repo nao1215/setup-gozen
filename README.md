@@ -41,6 +41,10 @@ Latest release:
     version: latest
 ```
 
+`latest` is the newest gozen CLI release (`vX.Y.Z`). Game package and
+catalog releases published from the gozen repository are skipped even when
+GitHub marks one of them as latest.
+
 An explicit version:
 
 ```yaml
@@ -143,6 +147,24 @@ version matches the library version.
 The action derives release asset names (`gozen_<version>_<os>_<arch>.<ext>`)
 from gozen's [GoReleaser](https://goreleaser.com/) config. If gozen's release
 naming changes, this action must be updated to match.
+
+## Testing
+
+| Technique | Bug class caught here |
+|---|---|
+| [Version input boundaries](scripts/version_test.sh) | `latest`, empty, whitespace, `v`-less and pre-release inputs resolving to the wrong tag, malformed versions reaching the download URL, and `latest` landing on a game package release that has no CLI binary |
+| [go.mod parsing](scripts/gomod_test.sh) | Require blocks, `// indirect`, CRLF, quoted paths, `replace` and pseudo-versions read as the wrong gozen version |
+| [go-mod-path safety](scripts/path_test.sh) | `..`, absolute, drive-letter, backslash and symbolic-link paths escaping the workspace |
+| [Checksum verification](scripts/checksum_test.sh) | A mismatched or missing `checksums.txt` entry passing silently |
+| [Release tag normalization](scripts/release_meta_test.sh) | Floating `vX` / `vX.Y` tags computed from a malformed release tag |
+| [Real-runner installs](.github/workflows/test.yml) | Asset naming, extraction, tool cache and `PATH` breakage on Linux, macOS and Windows (amd64 / arm64), pinned and `v`-less versions installing something else, and invalid inputs or a missing release passing silently on Linux and Windows |
+
+The unit scripts run on Linux, macOS (bash 3.2) and Windows (Git Bash) in the `unit` job:
+
+```shell
+shellcheck -x scripts/*.sh
+for t in scripts/*_test.sh; do bash "$t"; done
+```
 
 ## License
 

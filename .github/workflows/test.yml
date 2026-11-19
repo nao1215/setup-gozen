@@ -141,6 +141,34 @@ jobs:
           [ "${VERSION}" = "v0.2.0" ]
           gozen --version | grep -q "0.2.0"
 
+      # The leading v is optional, and install-dir copies the binary out of the
+      # tool cache instead of putting the cache path on PATH.
+      - name: Setup gozen (version without the leading v, custom install-dir)
+        id: vless
+        uses: ./
+        with:
+          version: 0.2.0
+          install-dir: ${{ runner.temp }}/gozen-pinned
+
+      - name: Check the v-less install
+        shell: bash
+        env:
+          VERSION: ${{ steps.vless.outputs.version }}
+          GOZEN_PATH: ${{ steps.vless.outputs.gozen-path }}
+          INSTALL_DIR: ${{ steps.vless.outputs.install-dir }}
+          CACHE_HIT: ${{ steps.vless.outputs.cache-hit }}
+          WANT_DIR: ${{ runner.temp }}/gozen-pinned
+        run: |
+          set -euo pipefail
+          [ "${VERSION}" = "v0.2.0" ] || { echo "version output: ${VERSION}" >&2; exit 1; }
+          [ "${CACHE_HIT}" = "true" ] || { echo "cache-hit output: ${CACHE_HIT}" >&2; exit 1; }
+          # Outputs are native paths; compare them in the same form.
+          want="${WANT_DIR}"
+          if command -v cygpath >/dev/null 2>&1; then want="$(cygpath -w "${WANT_DIR}")"; fi
+          [ "${INSTALL_DIR}" = "${want}" ] || { echo "install-dir output: ${INSTALL_DIR} (want ${want})" >&2; exit 1; }
+          [ -x "${GOZEN_PATH}" ] || { echo "gozen-path is not executable: ${GOZEN_PATH}" >&2; exit 1; }
+          "${GOZEN_PATH}" --version | grep -q "0.2.0"
+
       - name: Setup gozen (latest)
         id: latest
         uses: ./
@@ -157,43 +185,120 @@ jobs:
           [[ "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]
           gozen --version | grep -q "${VERSION#v}"
 
-  # Paths that leave the workspace, and go.mod files that name no release,
-  # must fail the step.
+
+  # Every input the action must refuse, on Linux and on Windows (where Git Bash
+  # sees drive letters and backslashes): each setup step has to fail, and no
+  # gozen may end up on PATH. v0.0.0 is well-formed but was never released, so
+  # it fails at the download instead of at validation.
   reject:
-    name: Reject (${{ matrix.case }})
+    name: Reject invalid inputs (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - case: parent-directory
-            path: ../../etc
-          - case: absolute-path
-            path: /etc
-          - case: windows-separators
-            path: '..\..\etc'
-          - case: windows-drive
-            path: 'C:\Windows'
-          - case: local-replace
-            path: test/fixtures/local-replace
-          - case: pseudo-version
-            path: test/fixtures/pseudo
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Setup gozen (expected to fail)
-        id: setup
+      - name: "Setup gozen, expected to fail: Parent directory in go-mod-path"
+        id: parent
         continue-on-error: true
         uses: ./
         with:
-          go-mod-path: ${{ matrix.path }}
+          go-mod-path: ../../etc
 
-      - name: The step must have failed
+      - name: "Setup gozen, expected to fail: Absolute go-mod-path"
+        id: absolute
+        continue-on-error: true
+        uses: ./
+        with:
+          go-mod-path: /etc
+
+      - name: "Setup gozen, expected to fail: Backslash parent directory in go-mod-path"
+        id: winsep
+        continue-on-error: true
+        uses: ./
+        with:
+          go-mod-path: '..\..\etc'
+
+      - name: "Setup gozen, expected to fail: Drive letter in go-mod-path"
+        id: drive
+        continue-on-error: true
+        uses: ./
+        with:
+          go-mod-path: 'C:\Windows'
+
+      - name: "Setup gozen, expected to fail: go.mod replacing gozen with a local path"
+        id: localreplace
+        continue-on-error: true
+        uses: ./
+        with:
+          go-mod-path: test/fixtures/local-replace
+
+      - name: "Setup gozen, expected to fail: go.mod pinning a pseudo-version"
+        id: pseudo
+        continue-on-error: true
+        uses: ./
+        with:
+          go-mod-path: test/fixtures/pseudo
+
+      - name: "Setup gozen, expected to fail: Version without a patch component"
+        id: short
+        continue-on-error: true
+        uses: ./
+        with:
+          version: v0.2
+
+      - name: "Setup gozen, expected to fail: Upper-case V prefix"
+        id: upper
+        continue-on-error: true
+        uses: ./
+        with:
+          version: V0.2.0
+
+      - name: "Setup gozen, expected to fail: Branch name as version"
+        id: branch
+        continue-on-error: true
+        uses: ./
+        with:
+          version: main
+
+      - name: "Setup gozen, expected to fail: Release that was never published"
+        id: missing
+        continue-on-error: true
+        uses: ./
+        with:
+          version: v0.0.0
+
+      - name: Every setup step must have failed and left nothing on PATH
         shell: bash
         env:
-          OUTCOME: ${{ steps.setup.outcome }}
+          OUTCOME_PARENT: ${{ steps.parent.outcome }}
+          OUTCOME_ABSOLUTE: ${{ steps.absolute.outcome }}
+          OUTCOME_WINSEP: ${{ steps.winsep.outcome }}
+          OUTCOME_DRIVE: ${{ steps.drive.outcome }}
+          OUTCOME_LOCALREPLACE: ${{ steps.localreplace.outcome }}
+          OUTCOME_PSEUDO: ${{ steps.pseudo.outcome }}
+          OUTCOME_SHORT: ${{ steps.short.outcome }}
+          OUTCOME_UPPER: ${{ steps.upper.outcome }}
+          OUTCOME_BRANCH: ${{ steps.branch.outcome }}
+          OUTCOME_MISSING: ${{ steps.missing.outcome }}
         run: |
-          [ "${OUTCOME}" = "failure" ]
+          set -euo pipefail
+          status=0
+          for name in $(compgen -A variable OUTCOME_); do
+            if [ "${!name}" = "failure" ]; then
+              echo "ok:   ${name#OUTCOME_} failed"
+            else
+              echo "FAIL: ${name#OUTCOME_} -> ${!name}" >&2
+              status=1
+            fi
+          done
+          if command -v gozen >/dev/null 2>&1; then
+            echo "FAIL: gozen is on PATH after failed installs: $(command -v gozen)" >&2
+            status=1
+          fi
+          exit "${status}"
