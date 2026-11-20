@@ -8,9 +8,9 @@
 
 GitHub Action to install the [gozen](https://github.com/nao1215/gozen) CLI.
 
-It downloads a prebuilt release binary, so your workflow needs no Go setup and
-no compile step. The version can follow your game's `go.mod`. Works on Linux,
-macOS, and Windows (amd64 / arm64).
+It downloads a prebuilt, checksum-verified release binary, so the workflow
+needs no Go setup and no compile step. Works on Linux, macOS, and Windows
+(amd64 / arm64).
 
 ## Quick start
 
@@ -21,9 +21,11 @@ steps:
   - run: gozen check game
 ```
 
-By default the action reads the version of `github.com/nao1215/gozen` from the
-`go.mod` in the repository root, so the CLI always matches the library your game
-is built with.
+By default the action installs the version of `github.com/nao1215/gozen` that
+the root `go.mod` requires, so the CLI matches the library your game is built
+with. `go run github.com/nao1215/gozen/cmd/gozen` gives the same match, but it
+compiles the CLI and Ebitengine on every fresh runner; this action takes a few
+seconds.
 
 ## Usage
 
@@ -41,9 +43,9 @@ Latest release:
     version: latest
 ```
 
-`latest` is the newest gozen CLI release (`vX.Y.Z`). Game package and
-catalog releases published from the gozen repository are skipped even when
-GitHub marks one of them as latest.
+`latest` is the newest gozen CLI release (`vX.Y.Z`). Game package and catalog
+releases from the gozen repository are skipped, even when GitHub marks one as
+latest.
 
 An explicit version:
 
@@ -53,8 +55,8 @@ An explicit version:
     version: v0.2.0
 ```
 
-A `go.mod` in a subdirectory (a monorepo). The path can be a directory or the
-`go.mod` file, and is relative to the workspace:
+A `go.mod` in a subdirectory, given as a directory or the file itself, relative
+to the workspace:
 
 ```yaml
 - uses: nao1215/setup-gozen@v0
@@ -64,8 +66,8 @@ A `go.mod` in a subdirectory (a monorepo). The path can be a directory or the
 
 ## Pin the action to a commit SHA
 
-Tags can be moved. For a workflow that must not change underneath you, pin the
-action to a full commit SHA and keep the tag in a comment:
+Tags can be moved. To keep the action fixed, pin a full commit SHA and keep the
+tag in a comment:
 
 ```yaml
 - uses: nao1215/setup-gozen@1c378fc446f62ecb29a7bcd40aea6dff8565d698 # v0.1.1
@@ -94,8 +96,8 @@ Dependabot and Renovate can keep a SHA-pinned action up to date.
 | `install-dir` | Directory containing the binary (added to `PATH`).       |
 | `cache-hit`   | `true` when the binary came from the runner tool cache.  |
 
-The binary is stored in the runner tool cache
-(`$RUNNER_TOOL_CACHE/gozen/<version>/<arch>`), so a second step or job on the
+The binary goes into the runner tool cache
+(`$RUNNER_TOOL_CACHE/gozen/<version>/<arch>`), so a later step or job on the
 same runner that asks for the same version skips the download.
 
 ## How go.mod is read
@@ -112,31 +114,21 @@ With `version: go.mod` the action finds the `github.com/nao1215/gozen` entry:
 
 ## Security
 
-- `go-mod-path` is resolved against `GITHUB_WORKSPACE`. The action refuses absolute
-  paths, drive letters (`C:\...`), UNC paths, and any path with a `..` segment.
-  Backslashes count as separators, so `..\..\etc` is refused too. After that, the
-  path is resolved to its real location (symbolic links followed) and must still
-  lie inside the real workspace; a link that points outside fails the step.
-  The target must be a directory containing `go.mod`, or a file named `go.mod`.
+- `go-mod-path` is resolved against `GITHUB_WORKSPACE`. Absolute paths, drive
+  letters (`C:\...`), UNC paths and any `..` segment are refused, with
+  backslashes counted as separators (`..\..\etc` is refused too). The real path,
+  with symbolic links followed, must stay inside the real workspace and must be
+  a directory containing `go.mod` or a file named `go.mod`.
 - The explicit `version` input must be a plain release version, because it ends
   up in a download URL and a cache path.
-- The archive is checked against the `checksums.txt` of the same release, and a
-  mismatch or a missing entry stops the install. Set `verify-checksum: false`
-  only if you accept the risk.
-- `verify-attestation: true` additionally runs `gh attestation verify` against
-  the gozen repository (requires the `gh` CLI, present on GitHub-hosted runners).
-  gozen releases also publish a cosign-signed `checksums.txt` and SLSA provenance
-  (`multiple.intoto.jsonl`), which you can check by hand.
+- The archive is checked against the same release's `checksums.txt`; a mismatch
+  or a missing entry stops the install.
+- `verify-attestation: true` also runs `gh attestation verify` against the gozen
+  repository (the `gh` CLI is present on GitHub-hosted runners). Releases also
+  publish a cosign-signed `checksums.txt` and SLSA provenance
+  (`multiple.intoto.jsonl`) for checking by hand.
 - `github-token` is sent only to `api.github.com`, never to release download
   hosts, and is never printed.
-
-## Compared with `go run github.com/nao1215/gozen/cmd/gozen`
-
-`go run` also works and needs nothing but Go, but it compiles the CLI and its
-dependencies (Ebitengine included) on every fresh runner. This action downloads
-a prebuilt, checksum-verified binary in a few seconds. Because `version: go.mod`
-follows your `go.mod`, you keep the same guarantee that `go run` gives: the CLI
-version matches the library version.
 
 ## Maintainer release flow
 
